@@ -1,0 +1,154 @@
+---
+title: "py_stream"
+output: github_document
+---
+
+Setup reticulate from R
+
+```{r}
+library(reticulate)
+use_python("/anaconda3/bin/python", required = TRUE)
+py_config()
+```
+
+```{python}
+import csv
+import pandas as pd
+from collections import defaultdict
+```
+
+
+### Sample to percentage of original lines
+
+Function to sample line-by-line
+
+```{python}
+def csv_sample(infile, outfile, prob, D = 2 ** 20):
+    
+    with open(infile, 'r') as f, open(outfile, 'w+') as o:
+        for i, line in enumerate(f):
+            if i == 0: 
+                o.write(line)
+            elif (hash(line) % D) / D < prob:
+                o.write(line)
+
+```
+
+Try it
+
+```{python}
+csv_sample(infile = "NSPL_FEB_2019_UK.csv",
+           outfile = "nspl_py_sample.csv",
+           prob = 1/200000)
+```
+
+Check results with pandas
+
+```{python}
+pd.read_csv("nspl_py_sample.csv", usecols = ['pcds', 'ctry', 'imd'])
+```
+
+
+### Sample to every nth line
+
+```{python}
+def csv_modline(infile, outfile, n):
+    
+    with open(infile, 'r') as f, open(outfile, 'w+') as o:
+        for i, line in enumerate(f):
+            if (i % n) == 0: o.write(line)
+```
+
+```{python}
+csv_modline(infile = "NSPL_FEB_2019_UK.csv",
+            outfile = "nspl_py_modline.csv",
+            n = 200000)
+```
+
+```{python}
+pd.read_csv("nspl_py_modline.csv", usecols = ['pcds', 'ctry', 'imd'])
+```
+
+
+### Tally field entries via defaultdict
+
+```{python}
+def csv_histogram(infile, idx):
+
+    hist = defaultdict(int)
+
+    with open(infile, 'r') as f:
+        f.readline()
+        for i, line in enumerate(f):
+            entry = line.split(",")[idx]
+            hist[entry] += 1
+
+    for item in hist:
+        print(item, "=", hist[item])
+```
+
+```{python}
+csv_histogram(infile = "NSPL_FEB_2019_UK.csv", idx = 16)
+```
+
+
+### Using csv.DictReader
+
+```{python}
+def csv_histogram(infile, field):
+
+    hist = defaultdict(int)
+    f = csv.DictReader(open(infile, 'r'))
+    
+    for row in f:
+        entry = row[field]
+        hist[entry] += 1
+
+    for item in hist:
+        print(item, "=", hist[item])
+```
+
+```{python}
+csv_histogram(infile = "NSPL_FEB_2019_UK.csv", field = "ctry")
+```
+
+
+### Principles of KMV sketch for a chosen field
+
+```{python}
+def csv_kmv(infile, idx, k = 256, D = 2 ** 20):
+
+    kmv = set()
+
+    with open(infile, 'r') as f:
+        
+        f.readline() #header
+        
+        for i, line in enumerate(f):
+            entry = line.split(",")[idx]
+            h_val = hash(entry) % D
+            
+            if len(kmv) <= k:
+                kmv.add(h_val)
+                maxhash = max(kmv)
+            
+            elif h_val < maxhash:
+                if h_val not in kmv:
+                    kmv.remove(maxhash)
+                    kmv.add(h_val)
+                    maxhash = max(kmv)
+    
+    return k / (maxhash / D)
+            
+```
+
+```{python}
+csv_kmv("NSPL_FEB_2019_UK.csv", idx = 9)
+```
+
+```{python}
+nspl_oa = pd.read_csv("NSPL_FEB_2019_UK.csv", usecols = ['oa11'])
+
+nspl_oa.oa11.nunique()
+```
+
